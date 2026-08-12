@@ -1,0 +1,4 @@
+# The installer creates credentials only inside its target LXC. Keep any local test artifacts out of Git.
+*.credentials
+*.log
+.DS_Store

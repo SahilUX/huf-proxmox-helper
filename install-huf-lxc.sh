@@ -1,121 +1,27 @@
 #!/usr/bin/env bash
-# HUF native Frappe Bench LXC installer for Proxmox VE.
-# Inspired by Community Scripts conventions, but self-contained for local testing.
-# Run on the Proxmox host as root: bash install-huf-lxc.sh
+# Container-side installer. It is started by ct/huf.sh through Community Scripts build.func.
 set -Eeuo pipefail
 
-APP="HUF"
+source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
+color
+verb_ip6
+catch_errors
+setting_up_container
+network_check
+update_os
+
+FRAPPE_MAJOR="${FRAPPE_MAJOR:-15}"
 HUF_REPO="${HUF_REPO:-https://github.com/tridz-dev/huf.git}"
 HUF_REF="${HUF_REF:-develop}"
-DEFAULT_CORES="${HUF_CORES:-4}"
-DEFAULT_MEMORY="${HUF_MEMORY:-4096}"
-DEFAULT_SWAP="${HUF_SWAP:-1024}"
-DEFAULT_DISK="${HUF_DISK:-30}"
-DEFAULT_HOSTNAME="${HUF_HOSTNAME:-huf}"
-DEFAULT_TAGS="${HUF_TAGS:-ai;automation}"
-
-log() { printf '\n==> %s\n' "$*"; }
-die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
-require_root() { [[ ${EUID} -eq 0 ]] || die "Run this script as root on the Proxmox host."; }
-require_pve() { command -v pct >/dev/null && command -v pveam >/dev/null || die "This does not appear to be a Proxmox VE host."; }
-ask() { local prompt=$1 default=$2 answer; read -r -p "$prompt [$default]: " answer; printf '%s' "${answer:-$default}"; }
-
-cleanup() {
-  [[ -n ${INSTALLER_FILE:-} ]] && rm -f "$INSTALLER_FILE"
-}
-trap cleanup EXIT
-
-require_root
-require_pve
-
-cat <<'BANNER'
-HUF native Frappe Bench installer
-
-This creates one unprivileged Ubuntu LXC and installs a fresh HUF site.
-It never restores the old HUF database or Docker state.
-
-Compatibility policy, checked against the HUF upstream source on 2026-08-13:
-  - Frappe 15 is the recommended stable HUF target.
-  - Frappe 14 is a legacy/experimental HUF option.
-  - Frappe 16 requires Python 3.14, but HUF's current LiteLLM constraint is
-    incompatible with Python 3.14. It is deliberately blocked by default.
-BANNER
-
-while true; do
-  read -r -p "Choose Frappe Bench major version (14, 15, 16) [15]: " FRAPPE_MAJOR
-  FRAPPE_MAJOR=${FRAPPE_MAJOR:-15}
-  [[ $FRAPPE_MAJOR =~ ^(14|15|16)$ ]] && break
-  echo "Enter 14, 15, or 16."
-done
-
-if [[ $FRAPPE_MAJOR == 16 && ${HUF_ALLOW_UNSUPPORTED_V16:-0} != 1 ]]; then
-  die "HUF on Frappe 16 is currently blocked: HUF's pinned LiteLLM range does not support Python 3.14. Use 15, or rerun only after an upstream-compatible HUF/LiteLLM release with HUF_ALLOW_UNSUPPORTED_V16=1."
-fi
-
-CTID=$(ask "Container ID" "100")
-[[ $CTID =~ ^[0-9]+$ ]] || die "Container ID must be numeric."
-pct status "$CTID" >/dev/null 2>&1 && die "CT $CTID already exists."
-HOSTNAME=$(ask "Container hostname" "$DEFAULT_HOSTNAME")
-CORES=$(ask "CPU cores" "$DEFAULT_CORES")
-MEMORY=$(ask "Memory in MiB" "$DEFAULT_MEMORY")
-SWAP=$(ask "Swap in MiB" "$DEFAULT_SWAP")
-DISK=$(ask "Disk in GiB" "$DEFAULT_DISK")
-ROOTFS_STORAGE=$(ask "Root filesystem storage" "local-lvm")
-TEMPLATE_STORAGE=$(ask "Template storage" "local")
-TAGS=$(ask "Proxmox tags (semicolon-separated)" "$DEFAULT_TAGS")
-NETWORK=$(ask "Network bridge" "vmbr0")
-IPCONF=$(ask "IPv4 configuration (dhcp or CIDR, e.g. 192.168.1.130/24)" "dhcp")
-GATEWAY=""
-if [[ $IPCONF != dhcp ]]; then
-  GATEWAY=$(ask "IPv4 gateway" "192.168.1.1")
-fi
-
-TEMPLATE=$(pveam available --section system 2>/dev/null | awk '/ubuntu-24\.04-standard/ {print $2}' | sort -V | tail -1)
-[[ -n $TEMPLATE ]] || die "Unable to find an Ubuntu 24.04 LXC template in pveam available. Run: pveam update"
-
-log "Downloading Ubuntu template if needed"
-pveam list "$TEMPLATE_STORAGE" 2>/dev/null | awk '{print $1}' | grep -qx "$TEMPLATE_STORAGE:vztmpl/$TEMPLATE" || pveam download "$TEMPLATE_STORAGE" "$TEMPLATE"
-
-NET0="name=eth0,bridge=$NETWORK,ip=$IPCONF"
-[[ -n $GATEWAY ]] && NET0+=",gw=$GATEWAY"
-
-log "Creating CT $CTID ($HOSTNAME)"
-pct create "$CTID" "$TEMPLATE_STORAGE:vztmpl/$TEMPLATE" \
-  --hostname "$HOSTNAME" \
-  --cores "$CORES" \
-  --memory "$MEMORY" \
-  --swap "$SWAP" \
-  --rootfs "$ROOTFS_STORAGE:${DISK}" \
-  --net0 "$NET0" \
-  --unprivileged 1 \
-  --features nesting=1,keyctl=1 \
-  --tags "$TAGS" \
-  --onboot 1 \
-  --ostype ubuntu
-pct start "$CTID"
-
-log "Waiting for network"
-for _ in $(seq 1 30); do
-  if pct exec "$CTID" -- getent hosts github.com >/dev/null 2>&1; then break; fi
-  sleep 2
-done
-pct exec "$CTID" -- getent hosts github.com >/dev/null 2>&1 || die "CT $CTID cannot resolve github.com. Fix the LXC network/DNS, then run the installer payload manually from /root/huf-install.sh."
-
-INSTALLER_FILE=$(mktemp /tmp/huf-install.XXXXXX.sh)
-cat >"$INSTALLER_FILE" <<'INSTALLER'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-
-FRAPPE_MAJOR="$1"
-HUF_REPO="$2"
-HUF_REF="$3"
 SITE_NAME="huf.local"
 BENCH_ROOT="/opt/frappe-bench"
 CREDS_FILE="/root/huf.credentials"
 
-log() { printf '\n==> %s\n' "$*"; }
-die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 run_frappe() { sudo -H -u frappe env HOME=/home/frappe PATH="/home/frappe/.local/bin:/usr/local/bin:/usr/bin:/bin" bash -c "$1"; }
+
+if [[ $FRAPPE_MAJOR == 16 && ${HUF_ALLOW_UNSUPPORTED_V16:-0} != 1 ]]; then
+  die "HUF on Frappe 16 is blocked because current HUF LiteLLM constraints conflict with Frappe 16's Python 3.14 runtime. Choose 14 or 15, or set HUF_ALLOW_UNSUPPORTED_V16=1 only after upstream compatibility is confirmed."
+fi
 
 case "$FRAPPE_MAJOR" in
   14) PYTHON_VERSION=3.11; NODE_MAJOR=18 ;;
@@ -261,14 +167,6 @@ Operational checks:
 EOF
 
 unset ADMIN_PASSWORD DB_ROOT_PASSWORD
-INSTALLER
-chmod 700 "$INSTALLER_FILE"
-pct push "$CTID" "$INSTALLER_FILE" /root/huf-install.sh --perms 0700
-
-log "Installing HUF inside CT $CTID"
-pct exec "$CTID" -- /root/huf-install.sh "$FRAPPE_MAJOR" "$HUF_REPO" "$HUF_REF"
-
-log "Completed"
-printf '\nProxmox CT %s is ready.\n' "$CTID"
-printf 'The installer generated credentials locally inside the LXC and does not echo them into the host install log.\n'
-printf 'To print them on demand, run on the Proxmox host:\n  pct exec %s -- cat /root/huf.credentials\n' "$CTID"
+motd_ssh
+customize
+cleanup_lxc

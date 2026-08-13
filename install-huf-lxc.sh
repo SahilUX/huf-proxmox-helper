@@ -181,7 +181,9 @@ if ! curl -fsS -o /dev/null -H "Host: $(hostname -I | awk '{print $1}')" http://
   msg_error "Nginx/Frappe HTTP health check failed. Inspect: supervisorctl status; journalctl -u nginx -n 100"
   exit 1
 fi
-if ! run_frappe "cd '$BENCH_ROOT' && bench --site '$SITE_NAME' list-apps" | grep -qx huf; then
+# `bench list-apps` reports HUF's installed module title as `Huf` while the
+# installable app name is lowercase `huf`; validate the app name case-insensitively.
+if ! run_frappe "cd '$BENCH_ROOT' && bench --site '$SITE_NAME' list-apps" | grep -qix huf; then
   msg_error "HUF is missing from the installed app list."
   exit 1
 fi

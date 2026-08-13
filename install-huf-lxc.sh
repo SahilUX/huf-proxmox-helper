@@ -203,6 +203,9 @@ Operational checks:
 EOF
 
 unset ADMIN_PASSWORD DB_ROOT_PASSWORD
-motd_ssh
+# `motd_ssh` from the Community Scripts runtime disables every Ubuntu MOTD
+# script using a glob. Ubuntu 24.04 may retain a non-writable release-upgrade
+# script in an unprivileged LXC, turning that cosmetic step into a false failed
+# install. Skip the optional MOTD customization; HUF services are already ready.
 customize
 cleanup_lxc

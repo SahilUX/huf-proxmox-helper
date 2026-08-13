@@ -17,7 +17,13 @@ SITE_NAME="huf.local"
 BENCH_ROOT="/opt/frappe-bench"
 CREDS_FILE="/root/huf.credentials"
 
-run_frappe() { sudo -H -u frappe env HOME=/home/frappe PATH="/home/frappe/.local/bin:/usr/local/bin:/usr/bin:/bin" bash -c "$1"; }
+# `sudo -u` preserves the caller's working directory. Community Scripts runs
+# this payload from /root, and uv then tries to read /root/uv.toml as frappe.
+# Always enter the service account's home before invoking uv, Bench, or Git.
+run_frappe() {
+  sudo -H -u frappe env HOME=/home/frappe PATH="/home/frappe/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+    bash -c "cd /home/frappe && $1"
+}
 
 if [[ $FRAPPE_MAJOR == 16 && ${HUF_ALLOW_UNSUPPORTED_V16:-0} != 1 ]]; then
   msg_error "HUF on Frappe 16 is blocked because current HUF LiteLLM constraints conflict with Frappe 16's Python 3.14 runtime. Choose 14 or 15, or set HUF_ALLOW_UNSUPPORTED_V16=1 only after upstream compatibility is confirmed."
@@ -65,10 +71,13 @@ EOF
 systemctl restart mariadb
 
 msg_info "Enabling Redis memory-overcommit setting"
+# Kernel sysctls belong to the Proxmox host. An unprivileged LXC cannot set
+# them and `sysctl --system` emits unrelated read-only warnings. Persist the
+# desired setting for a host administrator instead of treating it as guest setup.
 cat >/etc/sysctl.d/99-huf-redis.conf <<'EOF'
-vm.overcommit_memory = 1
+# Apply on the Proxmox host if Redis reports an overcommit warning:
+# vm.overcommit_memory = 1
 EOF
-sysctl --system >/dev/null
 
 msg_info "Creating the dedicated frappe account"
 id frappe >/dev/null 2>&1 || useradd --create-home --home-dir /home/frappe --shell /bin/bash frappe

@@ -22,6 +22,7 @@ CREDS_FILE="/root/huf.credentials"
 # Always enter the service account's home before invoking uv, Bench, or Git.
 run_frappe() {
   sudo -H -u frappe env HOME=/home/frappe PATH="/home/frappe/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT="${COREPACK_ENABLE_DOWNLOAD_PROMPT:-0}" \
     bash -c "cd /home/frappe && $1"
 }
 
@@ -50,8 +51,12 @@ apt-get install -y \
 msg_info "Installing Node.js $NODE_MAJOR and Yarn 1.22.22"
 curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
 apt-get install -y nodejs
+# Corepack's first download normally opens an interactive confirmation prompt.
+# This installer is non-interactive, so explicitly allow the pinned Yarn fetch.
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 corepack enable
 corepack prepare yarn@1.22.22 --activate
+yarn --version | grep -qx '1.22.22'
 
 msg_info "Installing wkhtmltopdf"
 # Ubuntu's package is adequate for standard Frappe print output. It avoids a distro-mismatched .deb.
@@ -93,6 +98,10 @@ run_frappe "uv tool install frappe-bench"
 run_frappe "uv python install $PYTHON_VERSION"
 PYTHON_BIN=$(run_frappe "uv python find $PYTHON_VERSION")
 
+# Bench invokes Corepack independently when it runs `yarn install`. Keep the
+# confirmation disabled for that subprocess too, otherwise it waits forever in
+# a Community-Scripts non-interactive container build.
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 msg_info "Initializing Frappe $FRAPPE_MAJOR Bench"
 run_frappe "cd /opt && bench init frappe-bench --frappe-branch version-$FRAPPE_MAJOR --python '$PYTHON_BIN'"
 

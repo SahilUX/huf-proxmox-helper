@@ -97,7 +97,10 @@ chmod 440 /etc/sudoers.d/frappe
 
 msg_info "Installing uv, Bench, and Python $PYTHON_VERSION"
 sudo -H -u frappe env HOME=/home/frappe bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
-run_frappe "uv tool install frappe-bench"
+# Bench's production setup calls its own interpreter as `python -m pip` to
+# install Ansible. uv tool environments omit pip unless explicitly requested.
+run_frappe "uv tool install --with pip frappe-bench"
+run_frappe "BENCH_PYTHON=\$(head -n1 \"\$(command -v bench)\" | sed 's/^#!//'); \"\$BENCH_PYTHON\" -m pip --version"
 run_frappe "uv python install $PYTHON_VERSION"
 PYTHON_BIN=$(run_frappe "uv python find $PYTHON_VERSION")
 

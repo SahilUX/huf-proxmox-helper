@@ -20,17 +20,18 @@ CREDS_FILE="/root/huf.credentials"
 run_frappe() { sudo -H -u frappe env HOME=/home/frappe PATH="/home/frappe/.local/bin:/usr/local/bin:/usr/bin:/bin" bash -c "$1"; }
 
 if [[ $FRAPPE_MAJOR == 16 && ${HUF_ALLOW_UNSUPPORTED_V16:-0} != 1 ]]; then
-  die "HUF on Frappe 16 is blocked because current HUF LiteLLM constraints conflict with Frappe 16's Python 3.14 runtime. Choose 14 or 15, or set HUF_ALLOW_UNSUPPORTED_V16=1 only after upstream compatibility is confirmed."
+  msg_error "HUF on Frappe 16 is blocked because current HUF LiteLLM constraints conflict with Frappe 16's Python 3.14 runtime. Choose 14 or 15, or set HUF_ALLOW_UNSUPPORTED_V16=1 only after upstream compatibility is confirmed."
+  exit 1
 fi
 
 case "$FRAPPE_MAJOR" in
   14) PYTHON_VERSION=3.11; NODE_MAJOR=18 ;;
   15) PYTHON_VERSION=3.12; NODE_MAJOR=18 ;;
   16) PYTHON_VERSION=3.14; NODE_MAJOR=24 ;;
-  *) die "Unsupported Frappe major: $FRAPPE_MAJOR" ;;
+  *) msg_error "Unsupported Frappe major: $FRAPPE_MAJOR"; exit 1 ;;
 esac
 
-log "Installing operating-system dependencies"
+msg_info "Installing operating-system dependencies"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get -y dist-upgrade
@@ -40,17 +41,17 @@ apt-get install -y \
   mariadb-client mariadb-server nginx pkg-config python3-dev python3-pip \
   redis-server sudo supervisor xvfb
 
-log "Installing Node.js $NODE_MAJOR and Yarn 1.22.22"
+msg_info "Installing Node.js $NODE_MAJOR and Yarn 1.22.22"
 curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
 apt-get install -y nodejs
 corepack enable
 corepack prepare yarn@1.22.22 --activate
 
-log "Installing wkhtmltopdf"
+msg_info "Installing wkhtmltopdf"
 # Ubuntu's package is adequate for standard Frappe print output. It avoids a distro-mismatched .deb.
 apt-get install -y wkhtmltopdf
 
-log "Configuring MariaDB for Frappe"
+msg_info "Configuring MariaDB for Frappe"
 cat >/etc/mysql/mariadb.conf.d/99-frappe.cnf <<'EOF'
 [mysqld]
 character-set-server = utf8mb4
@@ -63,13 +64,13 @@ default-character-set = utf8mb4
 EOF
 systemctl restart mariadb
 
-log "Enabling Redis memory-overcommit setting"
+msg_info "Enabling Redis memory-overcommit setting"
 cat >/etc/sysctl.d/99-huf-redis.conf <<'EOF'
 vm.overcommit_memory = 1
 EOF
 sysctl --system >/dev/null
 
-log "Creating the dedicated frappe account"
+msg_info "Creating the dedicated frappe account"
 id frappe >/dev/null 2>&1 || useradd --create-home --home-dir /home/frappe --shell /bin/bash frappe
 install -d -o frappe -g frappe -m 0755 /opt
 cat >/etc/sudoers.d/frappe <<'EOF'
@@ -77,21 +78,21 @@ frappe ALL=(ALL) NOPASSWD:ALL
 EOF
 chmod 440 /etc/sudoers.d/frappe
 
-log "Installing uv, Bench, and Python $PYTHON_VERSION"
+msg_info "Installing uv, Bench, and Python $PYTHON_VERSION"
 sudo -H -u frappe env HOME=/home/frappe bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
 run_frappe "uv tool install frappe-bench"
 run_frappe "uv python install $PYTHON_VERSION"
 PYTHON_BIN=$(run_frappe "uv python find $PYTHON_VERSION")
 
-log "Initializing Frappe $FRAPPE_MAJOR Bench"
+msg_info "Initializing Frappe $FRAPPE_MAJOR Bench"
 run_frappe "cd /opt && bench init frappe-bench --frappe-branch version-$FRAPPE_MAJOR --python '$PYTHON_BIN'"
 
-log "Starting Bench Redis services for site creation"
+msg_info "Starting Bench Redis services for site creation"
 sudo -H -u frappe redis-server "$BENCH_ROOT/config/redis_queue.conf" --daemonize yes
 sudo -H -u frappe redis-server "$BENCH_ROOT/config/redis_cache.conf" --daemonize yes
 sleep 2
 
-log "Generating local-only credentials"
+msg_info "Generating local-only credentials"
 ADMIN_PASSWORD=$(openssl rand -base64 36 | tr -dc 'A-Za-z0-9' | head -c 24)
 DB_ROOT_PASSWORD=$(openssl rand -base64 36 | tr -dc 'A-Za-z0-9' | head -c 24)
 umask 077
@@ -115,18 +116,18 @@ ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_ROOT_PASSWORD}';
 FLUSH PRIVILEGES;
 SQL
 
-log "Creating fresh HUF site"
+msg_info "Creating fresh HUF site"
 run_frappe "cd '$BENCH_ROOT' && bench new-site '$SITE_NAME' --db-root-username root --db-root-password '$DB_ROOT_PASSWORD' --admin-password '$ADMIN_PASSWORD' --set-default"
 
-log "Getting HUF source ($HUF_REF)"
+msg_info "Getting HUF source ($HUF_REF)"
 run_frappe "cd '$BENCH_ROOT' && bench get-app huf '$HUF_REPO' --branch '$HUF_REF'"
 
-log "Installing HUF and application requirements"
+msg_info "Installing HUF and application requirements"
 run_frappe "cd '$BENCH_ROOT' && bench --site '$SITE_NAME' install-app huf"
 run_frappe "cd '$BENCH_ROOT' && bench setup requirements"
 run_frappe "cd '$BENCH_ROOT' && bench --site '$SITE_NAME' migrate && bench build --production"
 
-log "Configuring production services"
+msg_info "Configuring production services"
 # bench setup production supplies supervisor and nginx definitions for this native bench.
 run_frappe "uv tool install ansible"
 ln -sf /home/frappe/.local/bin/ansible /usr/local/bin/ansible
@@ -141,16 +142,25 @@ systemctl enable --now supervisor nginx redis-server
 # This is a single-site LXC. Force the selected site for direct IP/LAN access,
 # avoiding any client hosts-file entry such as "IP huf.local".
 NGINX_CONF="/etc/nginx/conf.d/frappe-bench.conf"
-[[ -f $NGINX_CONF ]] || die "Expected Bench Nginx config was not generated: $NGINX_CONF"
+if [[ ! -f $NGINX_CONF ]]; then
+  msg_error "Expected Bench Nginx config was not generated: $NGINX_CONF"
+  exit 1
+fi
 sed -i -E "s/server_name[[:space:]]+[^;]+;/server_name _;/" "$NGINX_CONF"
 sed -i "s/proxy_set_header X-Frappe-Site-Name \$host;/proxy_set_header X-Frappe-Site-Name $SITE_NAME;/" "$NGINX_CONF"
 nginx -t
 systemctl reload nginx
 
-log "Verifying HUF"
+msg_info "Verifying HUF"
 sleep 5
-curl -fsS -o /dev/null -H "Host: $(hostname -I | awk '{print $1}')" http://127.0.0.1/ || die "Nginx/Frappe HTTP health check failed. Inspect: supervisorctl status; journalctl -u nginx -n 100"
-run_frappe "cd '$BENCH_ROOT' && bench --site '$SITE_NAME' list-apps" | grep -qx huf || die "HUF is missing from the installed app list."
+if ! curl -fsS -o /dev/null -H "Host: $(hostname -I | awk '{print $1}')" http://127.0.0.1/; then
+  msg_error "Nginx/Frappe HTTP health check failed. Inspect: supervisorctl status; journalctl -u nginx -n 100"
+  exit 1
+fi
+if ! run_frappe "cd '$BENCH_ROOT' && bench --site '$SITE_NAME' list-apps" | grep -qx huf; then
+  msg_error "HUF is missing from the installed app list."
+  exit 1
+fi
 
 cat <<EOF
 

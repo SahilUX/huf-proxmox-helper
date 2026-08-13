@@ -22,11 +22,21 @@ var_version="${var_version:-24.04}"
 var_arm64="${var_arm64:-yes}"
 var_unprivileged="${var_unprivileged:-1}"
 
-# Community Scripts' build.func normally fetches its installer from its own
-# repository. Replace only that URL with this repository's reviewed installer.
-BUILD_FUNC="$({ curl -fsSL "$BUILD_URL"; })"
+# Download Community Scripts runtime functions once at launcher startup. The
+# upstream build function otherwise makes a second raw-GitHub request mid-build;
+# that request can transiently fail after the LXC was already created. Supply
+# the verified copy to build.func instead.
+BUILD_FUNC="$(curl -fsSL "$BUILD_URL")"
+HUF_FUNCTIONS_FILE_PATH="$(curl -fsSL "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/install.func")"
 [[ ${#BUILD_FUNC} -gt 1000 ]] || { echo "Unable to download Community Scripts build functions." >&2; exit 1; }
-BUILD_FUNC="$(printf '%s' "$BUILD_FUNC" | sed 's|https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/install/${var_install}.sh|https://raw.githubusercontent.com/SahilUX/huf-proxmox-helper/main/install-huf-lxc.sh|g')"
+[[ ${#HUF_FUNCTIONS_FILE_PATH} -gt 1000 ]] || { echo "Unable to download Community Scripts install functions." >&2; exit 1; }
+export HUF_FUNCTIONS_FILE_PATH
+# Use the reviewed HUF payload and the downloaded install-function payload.
+BUILD_FUNC="${BUILD_FUNC//https:\/\/raw.githubusercontent.com\/community-scripts\/ProxmoxVE\/main\/install\/\$\{var_install\}.sh/$INSTALL_URL}"
+_func_fetch='export FUNCTIONS_FILE_PATH="$(curl -fsSL "$_func_url")"'
+_func_cached='export FUNCTIONS_FILE_PATH="$HUF_FUNCTIONS_FILE_PATH"'
+[[ $BUILD_FUNC == *"$_func_fetch"* ]] || { echo "Unsupported Community Scripts build.func: runtime function fetch not found." >&2; exit 1; }
+BUILD_FUNC="${BUILD_FUNC/"$_func_fetch"/"$_func_cached"}"
 source /dev/stdin <<<"$BUILD_FUNC"
 
 header_info "$APP"

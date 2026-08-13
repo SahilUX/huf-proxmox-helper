@@ -181,11 +181,10 @@ if ! curl -fsS -o /dev/null -H "Host: $(hostname -I | awk '{print $1}')" http://
   msg_error "Nginx/Frappe HTTP health check failed. Inspect: supervisorctl status; journalctl -u nginx -n 100"
   exit 1
 fi
-# Bench's CLI output uses presentation/module labels and may include versions,
-# which is not a stable installation check. `apps.txt` is Bench's authoritative
-# per-site installed-app manifest and contains the installable app name.
-if ! run_frappe "grep -qx huf '$BENCH_ROOT/sites/$SITE_NAME/apps.txt'"; then
-  msg_error "HUF is missing from the site's installed-app manifest."
+# Bench keeps its authoritative app manifest at the bench-level `sites/apps.txt`,
+# not inside an individual site directory. It lists installable app names.
+if ! run_frappe "grep -qx huf '$BENCH_ROOT/sites/apps.txt'"; then
+  msg_error "HUF is missing from Bench's installed-app manifest."
   exit 1
 fi
 

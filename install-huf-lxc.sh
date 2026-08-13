@@ -31,9 +31,12 @@ if [[ $FRAPPE_MAJOR == 16 && ${HUF_ALLOW_UNSUPPORTED_V16:-0} != 1 ]]; then
   exit 1
 fi
 
+# HUF's current frontend dependency graph includes packages that require
+# Node.js 20+. Frappe 15 itself works on Node 20, so use it instead of the
+# obsolete Node 18 baseline.
 case "$FRAPPE_MAJOR" in
-  14) PYTHON_VERSION=3.11; NODE_MAJOR=18 ;;
-  15) PYTHON_VERSION=3.12; NODE_MAJOR=18 ;;
+  14) PYTHON_VERSION=3.11; NODE_MAJOR=20 ;;
+  15) PYTHON_VERSION=3.12; NODE_MAJOR=20 ;;
   16) PYTHON_VERSION=3.14; NODE_MAJOR=24 ;;
   *) msg_error "Unsupported Frappe major: $FRAPPE_MAJOR"; exit 1 ;;
 esac

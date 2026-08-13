@@ -28,6 +28,7 @@ This opens the same full-screen interactive install flow used by Community Scrip
 | Network | DHCP on `vmbr0` |
 | Root filesystem storage | Proxmox UI default |
 | Frappe major | 15 |
+| Node.js | 20 for Frappe 14/15; 24 for Frappe 16 |
 
 The Community Scripts UI chooses the next available CT ID for Default Install, and exposes CT ID as an editable field in Advanced Install. Resources, storage, and networking remain customizable through the normal full-screen flow.
 

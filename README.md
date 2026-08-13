@@ -18,7 +18,7 @@ This opens the same full-screen interactive install flow used by Community Scrip
 
 | Setting | Default |
 |---|---:|
-| CT ID | `100` fixed |
+| CT ID | Next available, editable in Advanced Install |
 | Hostname | `huf` |
 | Tags | `ai;automation` |
 | CPU | 4 cores |
@@ -29,7 +29,7 @@ This opens the same full-screen interactive install flow used by Community Scrip
 | Root filesystem storage | Proxmox UI default |
 | Frappe major | 15 |
 
-The Community Scripts UI lets you customize resources, storage, and networking. CT ID remains `100` by design. The launcher refuses to continue if CT/VM 100 already exists rather than silently allocating another ID.
+The Community Scripts UI chooses the next available CT ID for Default Install, and exposes CT ID as an editable field in Advanced Install. Resources, storage, and networking remain customizable through the normal full-screen flow.
 
 ## What it installs
 
@@ -60,7 +60,7 @@ The installer generates random Frappe Administrator and MariaDB root passwords. 
 After a successful installation, retrieve them locally from the Proxmox host:
 
 ```bash
-pct exec 100 -- cat /root/huf.credentials
+pct exec <CT_ID> -- cat /root/huf.credentials
 ```
 
 ## Files

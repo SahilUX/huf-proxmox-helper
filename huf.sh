@@ -9,8 +9,10 @@ REPO_RAW="https://raw.githubusercontent.com/SahilUX/huf-proxmox-helper/main"
 INSTALL_URL="${REPO_RAW}/install-huf-lxc.sh"
 BUILD_URL="https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func"
 
-# Prescribed defaults. CT ID is intentionally fixed rather than auto-selected.
-var_ctid="${var_ctid:-100}"
+# Community Scripts selects the next available CT ID for Default Install and
+# exposes CT ID in Advanced Install. Do not reserve a fixed ID here.
+# `var_ctid` is therefore deliberately left unset until build.func's variables
+# screen resolves it.
 var_tags="${var_tags:-ai;automation}"
 var_cpu="${var_cpu:-4}"
 var_ram="${var_ram:-4096}"
@@ -32,11 +34,9 @@ variables
 color
 catch_errors
 
-# Do not silently select another ID: this helper is deliberately CT 100.
-if qm status "$var_ctid" >/dev/null 2>&1 || pct status "$var_ctid" >/dev/null 2>&1; then
-  msg_error "CT ID ${var_ctid} is already in use. This HUF helper is fixed to CT ID 100. Free CT/VM 100 before continuing."
-  exit 1
-fi
+# build.func performs the standard Community Scripts collision check and
+# selection flow (next available CT ID by default, editable in Advanced).
+# Do not add a second fixed-ID check here.
 
 FRAPPE_MAJOR="$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "HUF: Frappe Bench Version" \
   --radiolist "Choose the Frappe Bench major version for a fresh HUF installation.\n\nFrappe 15 is the supported default. Frappe 16 is currently blocked because HUF's current LiteLLM constraint conflicts with Python 3.14." \
@@ -62,4 +62,4 @@ echo -e "${CREATING}${GN}${APP} setup has been successfully initialized!${CL}"
 echo -e "${INFO}${YW}Access it using the following URL:${CL}"
 echo -e "${GATEWAY}${BGN}http://${IP}${CL}"
 echo -e "${INFO}${YW}Credentials are stored inside the LXC and are intentionally not printed in logs:${CL}"
-echo -e "${TAB}${BGN}pct exec 100 -- cat /root/huf.credentials${CL}"
+echo -e "${TAB}${BGN}pct exec ${var_ctid} -- cat /root/huf.credentials${CL}"

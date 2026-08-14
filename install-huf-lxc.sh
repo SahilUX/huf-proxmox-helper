@@ -212,6 +212,10 @@ unset ADMIN_PASSWORD DB_ROOT_PASSWORD
 # Preserve the requested root SSH behavior independently of that optional MOTD work.
 if [[ "${SSH_ROOT:-no}" == "yes" ]]; then
   sed -i 's/^#PermitRootLogin prohibit-password$/PermitRootLogin yes/' /etc/ssh/sshd_config
+  # `sshd -t` requires this privilege-separation runtime directory. It is
+  # normally created when ssh starts, but this validation runs beforehand in a
+  # fresh LXC, where /run is empty after boot.
+  install -d -o root -g root -m 0755 /run/sshd
   sshd -t
   systemctl reload ssh
 fi

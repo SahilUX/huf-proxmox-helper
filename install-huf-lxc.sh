@@ -217,7 +217,15 @@ if [[ "${SSH_ROOT:-no}" == "yes" ]]; then
   # fresh LXC, where /run is empty after boot.
   install -d -o root -g root -m 0755 /run/sshd
   sshd -t
-  systemctl reload ssh
+  # A fresh Community Scripts LXC can have ssh.service installed but inactive.
+  # Reload only a running daemon; otherwise enable and start it. This keeps the
+  # requested root-SSH setting without converting a completed HUF build into a
+  # false installer failure.
+  if systemctl is-active --quiet ssh; then
+    systemctl reload ssh
+  else
+    systemctl enable --now ssh
+  fi
 fi
 
 customize

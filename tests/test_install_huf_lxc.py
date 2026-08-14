@@ -16,11 +16,14 @@ class RootSshLifecycleTests(unittest.TestCase):
   fi'''
         self.assertIn(expected, INSTALLER)
 
-    def test_tailnet_socketio_uses_the_external_https_origin(self):
-        """Serve TLS must not be downgraded before Socket.IO validates CORS."""
-        self.assertIn('map $host $huf_socketio_origin {', INSTALLER)
-        self.assertIn('huf.bream-moth.ts.net https://$http_host;', INSTALLER)
-        self.assertIn('proxy_set_header Origin $huf_socketio_origin;', INSTALLER)
+    def test_tailnet_socketio_preserves_the_browser_origin(self):
+        """Serve TLS must not be rewritten to local HTTP before CORS validation."""
+        self.assertIn(
+            "sed -i '\\#proxy_set_header Origin \\$scheme://\\$http_host;#d' \"$NGINX_CONF\"",
+            INSTALLER,
+        )
+        self.assertNotIn('map $host $huf_socketio_origin {', INSTALLER)
+        self.assertNotIn('proxy_set_header Origin $huf_socketio_origin;', INSTALLER)
 
 
 if __name__ == "__main__":

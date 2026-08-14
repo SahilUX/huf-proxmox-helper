@@ -172,17 +172,10 @@ if [[ ! -f $NGINX_CONF ]]; then
 fi
 sed -i -E "s/server_name[[:space:]]+[^;]+;/server_name _;/" "$NGINX_CONF"
 sed -i "s/proxy_set_header X-Frappe-Site-Name \$host;/proxy_set_header X-Frappe-Site-Name $SITE_NAME;/" "$NGINX_CONF"
-# Tailscale Serve terminates TLS before proxying to local Nginx, so `$scheme`
-# is HTTP at this layer even when the browser's Socket.IO origin is HTTPS.
-# Preserve the browser's HTTPS origin only for this Tailnet hostname while
-# retaining ordinary HTTP origins for direct LAN/IP access.
-cat >/etc/nginx/conf.d/10-huf-tailnet-socketio.conf <<'EOF'
-map $host $huf_socketio_origin {
-    default $scheme://$http_host;
-    huf.bream-moth.ts.net https://$http_host;
-}
-EOF
-sed -i 's#proxy_set_header Origin \$scheme://\$http_host;#proxy_set_header Origin $huf_socketio_origin;#' "$NGINX_CONF"
+# Tailscale Serve terminates TLS before forwarding to local Nginx. Do not
+# overwrite Socket.IO's Origin with Nginx's local HTTP scheme: without an
+# override, Nginx preserves the browser's original HTTPS or LAN HTTP Origin.
+sed -i '\#proxy_set_header Origin \$scheme://\$http_host;#d' "$NGINX_CONF"
 nginx -t
 systemctl reload nginx
 

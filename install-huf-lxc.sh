@@ -207,5 +207,14 @@ unset ADMIN_PASSWORD DB_ROOT_PASSWORD
 # script using a glob. Ubuntu 24.04 may retain a non-writable release-upgrade
 # script in an unprivileged LXC, turning that cosmetic step into a false failed
 # install. Skip the optional MOTD customization; HUF services are already ready.
+# Community Scripts' `motd_ssh` normally applies the user's SSH_ROOT selection,
+# but its cosmetic MOTD chmod step can fail in an unprivileged Ubuntu LXC.
+# Preserve the requested root SSH behavior independently of that optional MOTD work.
+if [[ "${SSH_ROOT:-no}" == "yes" ]]; then
+  sed -i 's/^#PermitRootLogin prohibit-password$/PermitRootLogin yes/' /etc/ssh/sshd_config
+  sshd -t
+  systemctl reload ssh
+fi
+
 customize
 cleanup_lxc

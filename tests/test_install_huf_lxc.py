@@ -25,6 +25,12 @@ class RootSshLifecycleTests(unittest.TestCase):
         self.assertNotIn('map $host $huf_socketio_origin {', INSTALLER)
         self.assertNotIn('proxy_set_header Origin $huf_socketio_origin;', INSTALLER)
 
+    def test_installer_applies_guarded_huf_socket_frontend_fix(self):
+        """Fresh installs must not expose Frappe's internal port 9000 to browsers."""
+        self.assertIn('HUF_SOCKET_CONTEXT=', INSTALLER)
+        self.assertIn("window.location?.port || ''", INSTALLER)
+        self.assertIn("HUF frontend Socket.IO source differs; leaving it unchanged.", INSTALLER)
+
 
 if __name__ == "__main__":
     unittest.main()

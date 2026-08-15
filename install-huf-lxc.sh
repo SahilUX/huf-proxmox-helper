@@ -146,6 +146,39 @@ run_frappe "cd '$BENCH_ROOT' && bench new-site '$SITE_NAME' --db-root-username r
 msg_info "Getting HUF source ($HUF_REF)"
 run_frappe "cd '$BENCH_ROOT' && bench get-app huf '$HUF_REPO' --branch '$HUF_REF'"
 
+# HUF's current frontend uses Frappe's internal socketio_port (9000) even for
+# production pages. That bypasses the reverse-proxied same-origin Socket.IO
+# endpoint. Patch only the known upstream form and leave future upstream code
+# untouched if it has changed.
+HUF_SOCKET_CONTEXT="$BENCH_ROOT/apps/huf/frontend/src/contexts/SocketContext.tsx"
+if [[ -f $HUF_SOCKET_CONTEXT ]]; then
+  python3 - "$HUF_SOCKET_CONTEXT" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text()
+old = """      const port =
+        (window as FrappeWindow).frappe?.boot?.socketio_port ||
+        window.location?.port ||
+        '9000';"""
+new = """      // Production reverse proxies use the page origin for Socket.IO.
+      // A non-empty page port is retained for local development.
+      const port = window.location?.port || '';"""
+
+if old in source:
+    path.write_text(source.replace(old, new, 1))
+    print("Applied guarded HUF Socket.IO frontend patch.")
+elif new in source:
+    print("HUF Socket.IO frontend patch is already present.")
+else:
+    print("HUF frontend Socket.IO source differs; leaving it unchanged.")
+PY
+  chown frappe:frappe "$HUF_SOCKET_CONTEXT"
+else
+  msg_info "HUF Socket.IO frontend source not found; skipping optional guarded patch."
+fi
+
 msg_info "Installing HUF and application requirements"
 run_frappe "cd '$BENCH_ROOT' && bench --site '$SITE_NAME' install-app huf"
 run_frappe "cd '$BENCH_ROOT' && bench setup requirements"

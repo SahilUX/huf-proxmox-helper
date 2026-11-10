@@ -85,7 +85,7 @@ A full validation requires a disposable Proxmox CT and checks both HTTP availabi
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Copyright (c) 2026 Sahil Saleem. Licensed under GPL-3.0: you may reuse, change and sell it, but anything you distribute that includes it must stay GPL-3.0 with source. See [LICENSE](LICENSE).
 
 ### HUF licence
 

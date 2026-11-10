@@ -149,7 +149,9 @@ run_frappe "cd '$BENCH_ROOT' && bench get-app huf '$HUF_REPO' --branch '$HUF_REF
 # HUF's current frontend uses Frappe's internal socketio_port (9000) even for
 # production pages. That bypasses the reverse-proxied same-origin Socket.IO
 # endpoint. Patch only the known upstream form and leave future upstream code
-# untouched if it has changed.
+# untouched if it has changed. HUF is AGPL-3.0: the patched file carries a dated
+# modification notice (section 5(a)), and its modified source is upstream HUF
+# plus this patch (see README, "HUF licence").
 HUF_SOCKET_CONTEXT="$BENCH_ROOT/apps/huf/frontend/src/contexts/SocketContext.tsx"
 if [[ -f $HUF_SOCKET_CONTEXT ]]; then
   python3 - "$HUF_SOCKET_CONTEXT" <<'PY'
@@ -162,15 +164,24 @@ old = """      const port =
         (window as FrappeWindow).frappe?.boot?.socketio_port ||
         window.location?.port ||
         '9000';"""
-new = """      // Production reverse proxies use the page origin for Socket.IO.
+new = """      // Modified by huf-proxmox-helper (https://github.com/SahilUX/huf-proxmox-helper), 2026-11-10:
+      // Socket.IO uses the page origin. AGPL-3.0 section 5.
+      // Production reverse proxies use the page origin for Socket.IO.
+      // A non-empty page port is retained for local development.
+      const port = window.location?.port || '';"""
+# Earlier installer releases applied the same change without the notice.
+legacy = """      // Production reverse proxies use the page origin for Socket.IO.
       // A non-empty page port is retained for local development.
       const port = window.location?.port || '';"""
 
-if old in source:
+if new in source:
+    print("HUF Socket.IO frontend patch is already present.")
+elif legacy in source:
+    path.write_text(source.replace(legacy, new, 1))
+    print("HUF Socket.IO frontend patch is already present; added its modification notice.")
+elif old in source:
     path.write_text(source.replace(old, new, 1))
     print("Applied guarded HUF Socket.IO frontend patch.")
-elif new in source:
-    print("HUF Socket.IO frontend patch is already present.")
 else:
     print("HUF frontend Socket.IO source differs; leaving it unchanged.")
 PY

@@ -1,5 +1,8 @@
 """Regression tests for the container-side installer."""
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 
 
@@ -30,6 +33,57 @@ class RootSshLifecycleTests(unittest.TestCase):
         self.assertIn('HUF_SOCKET_CONTEXT=', INSTALLER)
         self.assertIn("window.location?.port || ''", INSTALLER)
         self.assertIn("HUF frontend Socket.IO source differs; leaving it unchanged.", INSTALLER)
+
+
+def _socket_patch_script():
+    start = INSTALLER.index("python3 - \"$HUF_SOCKET_CONTEXT\" <<'PY'\n")
+    start = INSTALLER.index("\n", start) + 1
+    return INSTALLER[start:INSTALLER.index("\nPY\n", start)]
+
+
+UPSTREAM = """      const port =
+        (window as FrappeWindow).frappe?.boot?.socketio_port ||
+        window.location?.port ||
+        '9000';"""
+LEGACY_PATCHED = """      // Production reverse proxies use the page origin for Socket.IO.
+      // A non-empty page port is retained for local development.
+      const port = window.location?.port || '';"""
+NOTICE = "// Modified by huf-proxmox-helper (https://github.com/SahilUX/huf-proxmox-helper), "
+
+
+class SocketPatchTests(unittest.TestCase):
+    def run_patch(self, body):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "SocketContext.tsx"
+            path.write_text(f"before\n{body}\nafter\n")
+            out = subprocess.run(
+                [sys.executable, "-I", "-", str(path)],
+                input=_socket_patch_script(), text=True, capture_output=True, check=True,
+            ).stdout
+            return out, path.read_text()
+
+    def test_upstream_text_is_patched_with_notice(self):
+        out, text = self.run_patch(UPSTREAM)
+        self.assertIn("Applied guarded HUF Socket.IO frontend patch.", out)
+        self.assertIn(NOTICE, text)
+        self.assertIn("AGPL-3.0 section 5.", text)
+        self.assertNotIn("'9000'", text)
+        self.assertEqual(text.count("const port ="), 1)
+        rerun_out, rerun_text = self.run_patch(text.removeprefix("before\n").removesuffix("\nafter\n"))
+        self.assertIn("already present.", rerun_out)
+        self.assertEqual(rerun_text, text)
+
+    def test_legacy_patched_text_is_recognised(self):
+        out, text = self.run_patch(LEGACY_PATCHED)
+        self.assertIn("HUF Socket.IO frontend patch is already present", out)
+        self.assertNotIn("source differs", out)
+        self.assertEqual(text.count(NOTICE), 1)
+        self.assertEqual(text.count("const port ="), 1)
+
+    def test_unrelated_text_is_left_unchanged(self):
+        out, text = self.run_patch("const port = 1234;")
+        self.assertIn("source differs; leaving it unchanged.", out)
+        self.assertEqual(text, "before\nconst port = 1234;\nafter\n")
 
 
 if __name__ == "__main__":

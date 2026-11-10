@@ -86,3 +86,11 @@ A full validation requires a disposable Proxmox CT and checks both HTTP availabi
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+### HUF licence
+
+HUF ([tridz-dev/huf](https://github.com/tridz-dev/huf)) is licensed under AGPL-3.0. At install time, `install-huf-lxc.sh` modifies one file of the downloaded HUF source, `apps/huf/frontend/src/contexts/SocketContext.tsx`, so that Socket.IO uses the page origin. The modified file carries a dated notice that says so.
+
+- The installed HUF, including that change, stays under AGPL-3.0.
+- The modified source is upstream HUF plus the patch in `install-huf-lxc.sh` in this public repository. If you offer the installed HUF to users over a network, AGPL-3.0 section 13 requires you to offer them that source.
+- This helper stays MIT. The four HUF lines it contains are quoted only to locate the patch.
